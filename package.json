@@ -1,0 +1,14 @@
+{
+  "name": "mpmario",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev:server": "pnpm --filter @mpmario/server dev",
+    "dev:client": "pnpm --filter @mpmario/client dev",
+    "test": "pnpm --filter @mpmario/server test",
+    "build": "pnpm --filter @mpmario/shared build && pnpm --filter @mpmario/server build && pnpm --filter @mpmario/client build"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  }
+}
