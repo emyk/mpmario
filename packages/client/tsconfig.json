@@ -9,6 +9,7 @@
     "useDefineForClassFields": false,
     "esModuleInterop": true,
     "skipLibCheck": true,
+    "noEmit": true,
     "paths": {
       "@mpmario/shared": ["../shared/src/index.ts"]
     }
