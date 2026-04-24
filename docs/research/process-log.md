@@ -162,3 +162,60 @@
 - Tolkning / usikkerhet: The level generation is script-based (Node.js one-liners). This makes levels reproducible but not visually designable without tooling. The Tiled editor would give better control, but generating from code is fast for a research project.
 
 ---
+
+### Oppføring — Tasks 11–14: Client scaffold, NetworkManager, InputHandler, StateRenderer
+
+- Tidspunkt: 2026-04-24
+- Hva ble testet: Phaser 3 client bootstrap — Vite build pipeline, generated placeholder textures, Colyseus.js NetworkManager, keyboard InputHandler, and state-interpolating StateRenderer
+- Betingelse / variant: Client tasks have no unit test suite — verification is TypeScript compilation via `pnpm --filter @mpmario/client build`. Browser rendering cannot be verified in this container environment.
+- Resultat / observasjon: Several Phaser API issues caught during implementation:
+  - `this.make.graphics({ add: false })` is not a valid Phaser 3 API — the `add` flag is the second argument, not an option key. Fixed to `this.make.graphics({}, false)`.
+  - `tsc` was emitting `.js` files alongside TypeScript sources; fixed with `"noEmit": true` in tsconfig.
+  - `input` and `renderer` are reserved property names on `Phaser.Scene`; the implementer renamed them to `inputHandler` and `stateRenderer` to avoid conflicts.
+  - `NetworkManager.joinGame()` originally did not close the previous game room before overwriting the reference — WebSocket leak on vote-to-next-game transition. Fixed.
+  - A spurious `MSG_GAME_READY` listener was registered on the game room (it should only be on the lobby room). Removed.
+- Måling / eksempel: Commits `bb751e3` through `515d146`. Client builds to 1.5 MB (Phaser bundled). Chunk size warning expected — Phaser is a large library. 31 server tests still passing.
+- Tolkning / usikkerhet: Phaser API issues (naming conflicts, constructor signatures) are the primary challenge in client tasks. The spec reference code had two such errors. The implementer self-corrected both, which shows that even well-specified plans can contain API mistakes for a library-heavy domain.
+
+---
+
+### Oppføring — Tasks 15–16: GameScene (full), LobbyScene, VoteScene
+
+- Tidspunkt: 2026-04-24
+- Hva ble testet: Full game scenes — interpolated state rendering in GameScene, matchmaking UI in LobbyScene, level vote UI in VoteScene
+- Betingelse / variant: These scenes complete the client-side user flow: connect → queue → play → vote → play again.
+- Resultat / observasjon: One critical spec/logic bug found by the reviewer: `VoteScene.onGameReady` was dead code. The callback was set but could never fire because `MSG_GAME_READY` was only registered as a listener on `lobbyRoom`, and by the time VoteScene is reached, the lobby room has been left. Fixed by also registering `MSG_GAME_READY` on the game room inside `NetworkManager.joinGame()`. Additionally: `GameScene.onGameReady` had an unhandled promise rejection; fixed with `.catch()`.
+- Måling / eksempel: Commits `63ec3d7` through `5cdcf23`. Full client flow wired end-to-end.
+- Tolkning / usikkerhet: The MSG_GAME_READY dead-code bug was architectural rather than syntactic — no TypeScript error, no test failure would catch it. The code review step was essential for catching it. This is the clearest example in the project of a bug that only surface review (not compilation, not tests) could find.
+
+---
+
+### Oppføring — Task 17: Avslutning og verifisering
+
+- Tidspunkt: 2026-04-24
+- Hva ble testet: Final end-to-end build verification and process documentation
+- Betingelse / variant: Browser testing not possible (container with no port forwarding). Verified via: 31/31 server tests, clean TypeScript compilation for all three packages, client Vite build success.
+- Resultat / observasjon: All 17 tasks completed. Server: 31 unit and integration tests, all passing. Client: builds cleanly with no TypeScript errors (1.57 MB bundle, Phaser included). All game systems integrated: matchmaking → game loop → physics/collision/AI → win detection → vote → next game.
+- Måling / eksempel: Total commits on `implement` branch: 30+. Commit history from e744fea (scaffold) to final. Test count grew: 0 → 20 (after Task 6) → 27 (after Task 7) → 31 (final).
+- Tolkning / usikkerhet: The two-stage review (spec compliance + code quality) added overhead but caught bugs at every task. Summary of bugs caught by review, not tests: LobbyRoom race condition (Task 3), X-axis wall double-count (Task 6), `heightTiles * 32` magic number (Task 8), fireball double-kill (Task 9), VoteScene dead-code transition (Task 15/16), `joinGame` WebSocket leak (Tasks 12/16). The spec compliance check was particularly valuable — it prevented implementers from over-building and caught one case where the plan itself was wrong about which message to route.
+
+---
+
+## Samlede observasjoner
+
+### Hva fungerte godt
+
+1. **Subagent-driven development**: Fresh context per task kept implementers focused. No accumulated confusion across tasks. The review handoff was clean.
+2. **Two-stage review** (spec then quality): Caught bugs at every stage. Quality review was more valuable than expected — it found not just style issues but real logic bugs.
+3. **Plan quality**: The 17-task plan with complete code in every step let subagents implement without reading the design spec. The few plan bugs (physics gravity, pit threshold magic number, MSG_GAME_READY routing) were caught by tests or review before reaching production.
+4. **Proactive schema fixes**: Adding `FireballState` and `vy` to `EnemyState` in Task 2 avoided Colyseus schema version bumps later. The controller's ability to override the spec reviewer's "not in spec" flag was important here.
+5. **Process log discipline**: Maintaining this log in parallel with development forced reflection on each task's observations, which is the research value.
+
+### Hva kan forbedres
+
+1. **Browser testing gap**: Client tasks (Tasks 11–17) were verified only by TypeScript compilation. The actual rendering pipeline was not tested end-to-end. For a production project, E2E browser tests would be essential.
+2. **Plan API errors**: The plan contained wrong Phaser 3 API calls (constructor signatures, property names that conflict with base class). For library-heavy domains, plans should be validated against the actual installed library version before implementation.
+3. **Controller overhead**: Each task required the controller to read the plan, craft an implementer prompt, wait for implementation, then dispatch spec and quality reviewers. Roughly 30-40% of elapsed time was coordination, not implementation.
+4. **Test coverage for complex interactions**: The GameRoom integration tests were limited (2 tests). More scenarios (fireball mechanics, multi-player simultaneous events, vote resolution) would have caught bugs earlier.
+
+---
