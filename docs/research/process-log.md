@@ -252,6 +252,63 @@
 
 ---
 
+### Oppføring — Nettverksfeil: Vite dev-server på feil port
+
+- Tidspunkt: 2026-04-24, etter Railway-oppsett
+- Hva ble testet: Lokal kjøring av klient mot server
+- Betingelse / variant: Vite dev-server kjører på port 3000, Colyseus-server på port 2567.
+- Resultat / observasjon: `POST http://localhost:3000/matchmake/joinOrCreate/game 404`. `resolveServerUrl()` i `NetworkManager.ts` falt tilbake til `window.location.host` (port 3000) når `VITE_SERVER_URL` ikke var satt. Colyseus lytter ikke på 3000, bare 2567.
+  - **Løsning**: La til eksplisitt localhost-sjekk i `resolveServerUrl()`: når `hostname === "localhost"` eller `"127.0.0.1"`, returner `ws://localhost:2567`. I produksjon (Railway) er klient og server på samme host — eksisterende fallback fungerer uendret.
+- Tolkning / usikkerhet: To separate prosesser i utvikling (Vite + Colyseus) er et klassisk kilde til forvirring i fullstack-utvikling. Det korrekte langsiktige svaret er enten en Vite-proxy eller en env-variabel. Localhost-hardkoding er enklest og fungerer for dette prosjektet.
+
+---
+
+### Oppføring — Railway-bygg: Nixpacks ignorerer buildCommand, Dockerfile-overgang
+
+- Tidspunkt: 2026-04-24
+- Hva ble testet: Automatisk deploy til Railway via GitHub-integrasjon
+- Betingelse / variant: Tre iterasjoner av Railway-byggfeil.
+  1. **Iterasjon 1** (`railway.json` buildCommand): Nixpacks auto-detekterte pnpm workspace og genererte `pnpm --filter @mpmario/server build` i Dockerfile — hoppet over `@mpmario/shared`. `railway.json`-feltet `buildCommand` ble ignorert.
+  2. **Iterasjon 2** (`nixpacks.toml`): La til `[phases.build] cmds = ["pnpm run build"]`. Riktig build-rekkefølge oppnådd, men `@colyseus/schema` ikke funnet av TypeScript under server-bygg — det er en transitiv avhengighet, ikke direkte deklarert i `packages/server/package.json`.
+  3. **Iterasjon 3** (Dockerfile): Byttet til `"builder": "DOCKERFILE"` i `railway.json`. Dockerfile gir full kontroll over build-rekkefølge og avhengighetsoppsett.
+- Resultat / observasjon: Vellykket bygg etter overgang til Dockerfile.
+- Tolkning / usikkerhet: Nixpacks er nyttig for enkle prosjekter, men upålitelig for monorepos med avhengighetsrekkefølge mellom pakker. For ethvert workspace-monorepo er en eksplisitt Dockerfile tryggere og mer forutsigbar. Railway-dokumentasjonen er ikke tydelig på at `buildCommand` i `railway.json` ikke overstyrer Nixpacks sin genererte Dockerfile.
+
+---
+
+### Oppføring — TypeScript-byggfeil: `@colyseus/schema` ikke funnet i Docker
+
+- Tidspunkt: 2026-04-24, under Docker-bygg på Railway
+- Hva ble testet: `tsc`-bygg av `@mpmario/server` i Docker-miljø
+- Betingelse / variant: pnpm strikt isolasjon — transitive avhengigheter er ikke direkte tilgjengelige for TypeScript-resolveren.
+- Resultat / observasjon: `EnemyAI.ts` importerte `MapSchema` direkte fra `@colyseus/schema`. Lokalt fungerte dette fordi pnpm hoister pakken i utviklingsmiljøet, men i Docker-bildet var den ikke tilgjengelig som en direkte avhengighet for `@mpmario/server`. I tillegg kompilerte `tsc` testfilene i `src/__tests__/` (inkludert i `"include": ["src"]`), som også importerte fra `@colyseus/schema`.
+  - **Løsning 1**: Endret `EnemyAI.ts` til å bruke `Map<string, EnemyState>` i stedet for `MapSchema<EnemyState>` — `MapSchema` er en subklasse av `Map`, så dette er typesikkert.
+  - **Løsning 2**: La til `"exclude": ["src/__tests__"]` i server-tsconfig. Tester kjøres av Vitest, ikke `tsc` — det er unødvendig å kompilere dem under produksjonsbygg.
+- Tolkning / usikkerhet: Avhengigheter som "fungerer lokalt" pga. hoisting er en vanlig kilde til byggfeil i CI/CD. Eksplisitt avhengighetserklæring eller unngåelse av direkte import fra transitive pakker er beste praksis.
+
+---
+
+### Oppføring — Stompdeteksjon: tunneling ved høy fallhastighet
+
+- Tidspunkt: 2026-04-24
+- Hva ble testet: Stomp av fiender (hoppe på toppen av dem)
+- Betingelse / variant: `MAX_FALL_SPEED = 12` piksler/tick, stompvindu sjekket etter fysikkoppdatering.
+- Resultat / observasjon: Spiller ble skadet i stedet for å drepe fienden ved stomp. Diagnose: `resolveEntityCollisions` kjører etter `applyPhysics` (som allerede har integrert hastigheten). Ved maks fallhastighet kan spillerens føtter flytte seg 12px på én tick — nok til å hoppe over hele 8px-stompvinduet (`enemy.y` til `enemy.y+8`) og lande innenfor "side-hit"-sonen.
+  - **Løsning**: Bruk pre-fysikk-posisjon for stompsjekk: `prevBottom = attacker.y - attacker.vy + 16` (spillerens fot-posisjon FØR denne tickens bevegelse). Sjekk `prevBottom <= enemy.y + 12` i stedet for `attacker.y + 16 <= enemy.y + 8`. Utvidet terskel til `enemy.y+12` (øverste 3/4 av fienden) og `victim.y+8` (øverste halvdel) for spiller-vs-spiller.
+- Tolkning / usikkerhet: "Tunneling" er et klassisk problem i diskret fysikksimulering — entiteter beveger seg raskt nok til å hoppe over kollisjonssoner mellom frames. Riktig løsning er swept collision eller pre-posisjonskontroll. Å redusere `MAX_FALL_SPEED` ville også hjelpe, men ville endre spillfølelsen.
+
+---
+
+### Oppføring — Funksjon: 2 samtidige ildkuler, lydeffekter
+
+- Tidspunkt: 2026-04-24
+- Hva ble implementert: To forbedringer på spillerens forespørsel
+- **2 samtidige ildkuler**: Den opprinnelige implementasjonen tillot kun én ildkule av gangen (20-tick fast cooldown). Endret til klassisk Mario-atferd: opptil 2 live ildkuler per spiller tillatt, med 10-tick minimumsintervall mellom skudd. Ny ildkule kan avfyres så snart en eldre ildkule forsvinner.
+- **Lydeffekter**: Implementerte proseduralt genererte lyder via Web Audio API — ingen lydfiler nødvendig. `SoundManager`-klasse med oscillatornoder for 6 hendelser: hopp (stigende firkantsveip), ildkule (sagtann-pev), stomp (fallende bloop), power-up (oppstigende arpeggio), tap av liv (fallende sekvens), seier/tap (fanfare). Lyder trigges ved kant-deteksjon av tastetrykk (hopp, ildkule) og tilstandsendringer (stomp, power-up, liv-tap). `AudioContext` opprettes lazy ved første tastetrykk — unngår nettleserens autoplay-blokk.
+- Tolkning / usikkerhet: Proseduralt genererte lyder er godt egnet for et forskningsprosjekt: ingen rettighetsutfordringer, ingen HTTP-forespørsler, fungerer offline. Lydkvaliteten er bevisst 8-bit/retro for å matche den pikselerte grafikken.
+
+---
+
 ## Samlede observasjoner
 
 ### Hva fungerte godt
