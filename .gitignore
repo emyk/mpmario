@@ -2,3 +2,5 @@ node_modules/
 dist/
 .superpowers/
 .worktrees/
+.idea
+.pnpm-store
