@@ -106,10 +106,15 @@ export class GameRoom extends Room<GameState> {
     this.state.players.forEach((attacker, attackerId) => {
       if (!attacker.isAlive || attacker.invincibleTicks > 0) return;
 
+      // Use pre-physics bottom to detect stomp: applyPhysics already did y += vy,
+      // so (y - vy + 16) is where the player's feet were before this tick's movement.
+      // Without this, high fall speeds tunnel through the stomp window in one tick.
+      const prevBottom = attacker.y - attacker.vy + 16;
+
       this.state.players.forEach((victim, victimId) => {
         if (attackerId === victimId || !victim.isAlive || victim.invincibleTicks > 0) return;
         if (this.overlaps(attacker, victim, 14, 16)) {
-          if (attacker.vy > 0 && attacker.y + 16 <= victim.y + 4) {
+          if (attacker.vy > 0 && prevBottom <= victim.y + 8) {
             this.eliminatePlayer(victim, attackerId);
             attacker.vy = -6;
           }
@@ -119,7 +124,7 @@ export class GameRoom extends Room<GameState> {
       this.state.enemies.forEach((enemy) => {
         if (!enemy.isAlive) return;
         if (this.overlaps(attacker, enemy, 14, 16)) {
-          if (attacker.vy > 0 && attacker.y + 16 <= enemy.y + 8) {
+          if (attacker.vy > 0 && prevBottom <= enemy.y + 12) {
             if (enemy.type === "koopa" && !enemy.isShell) {
               enemy.isShell = true;
               enemy.vx = 0;
