@@ -58,7 +58,7 @@ Three tiers connected by WebSocket (Colyseus protocol):
 
 **Shared (TypeScript package)**
 - Colyseus state schemas (single source of truth for client and server)
-- Input message types: `{ action: "jump" | "left" | "right" | "attack" }`
+- Input message types: `{ left: boolean; right: boolean; jump: boolean; attack: boolean }` — full key state sent each frame so simultaneous inputs (e.g. run + jump) are supported
 - Game constants: tile size, physics values, speeds, respawn timers
 
 **Key design principle:** The server is authoritative. All physics and game logic run on the server. Clients send input commands, receive state patches, and interpolate sprite positions to hide latency.
@@ -102,7 +102,7 @@ All enemies are server-authoritative — positions and state synced to all clien
 
 ### Levels
 - 3 hand-crafted levels built with **Tiled** map editor (exported as JSON)
-- After each match, remaining/surviving players vote on next level
+- After each match, all players (including eliminated ones) vote on next level
 - Majority vote wins; tie broken randomly
 
 ### Lobby & Matchmaking
