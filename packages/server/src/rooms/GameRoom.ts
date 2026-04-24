@@ -21,6 +21,7 @@ export class GameRoom extends Room<GameState> {
   private votes               = new Map<string, number>();
   private fireballCounter     = 0;
   private fireballCooldowns   = new Map<string, number>();
+  private peakPlayerCount     = 0;
   maxClients = MAX_PLAYERS;
 
   async onCreate(options: GameRoomOptions) {
@@ -52,6 +53,9 @@ export class GameRoom extends Room<GameState> {
     p.spawnX = p.x;
     p.spawnY = p.y;
     this.state.players.set(client.sessionId, p);
+    if (this.state.players.size > this.peakPlayerCount) {
+      this.peakPlayerCount = this.state.players.size;
+    }
   }
 
   onLeave(client: Client) {
@@ -115,7 +119,7 @@ export class GameRoom extends Room<GameState> {
       this.state.enemies.forEach((enemy) => {
         if (!enemy.isAlive) return;
         if (this.overlaps(attacker, enemy, 14, 16)) {
-          if (attacker.vy > 0 && attacker.y + 16 <= enemy.y + 4) {
+          if (attacker.vy > 0 && attacker.y + 16 <= enemy.y + 8) {
             if (enemy.type === "koopa" && !enemy.isShell) {
               enemy.isShell = true;
               enemy.vx = 0;
@@ -176,12 +180,14 @@ export class GameRoom extends Room<GameState> {
       player.y = player.spawnY;
       player.vx = 0;
       player.vy = 0;
+      player.powerUp = "none";
       player.invincibleTicks = RESPAWN_INVINCIBILITY_TICKS;
     }
   }
 
   checkWinCondition() {
     if (this.state.matchPhase !== "playing") return;
+    if (this.peakPlayerCount < 2) return;
     const alive = [...this.state.players.values()].filter(p => p.lives > 0);
     if (alive.length === 1) {
       this.state.matchPhase = "ended";
@@ -200,6 +206,7 @@ export class GameRoom extends Room<GameState> {
   }
 
   private startVote() {
+    this.lock();
     this.state.matchPhase = "voting";
     this.state.voteTimer = VOTE_DURATION_S;
     const countdown = this.clock.setInterval(() => {

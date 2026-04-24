@@ -2,11 +2,14 @@
   "name": "mpmario",
   "version": "1.0.0",
   "private": true,
+  "engines": { "node": ">=20" },
   "scripts": {
-    "dev:server": "pnpm --filter @mpmario/server dev",
+    "dev:server": "pnpm --filter @mpmario/shared build && pnpm --filter @mpmario/server dev",
+    "dev:shared": "pnpm --filter @mpmario/shared exec tsc --watch",
     "dev:client": "pnpm --filter @mpmario/client dev",
     "test": "pnpm --filter @mpmario/server test",
-    "build": "pnpm --filter @mpmario/shared build && pnpm --filter @mpmario/server build && pnpm --filter @mpmario/client build"
+    "build": "pnpm --filter @mpmario/shared build && pnpm --filter @mpmario/server build && pnpm --filter @mpmario/client build",
+    "start": "node packages/server/dist/index.js"
   },
   "devDependencies": {
     "typescript": "^5.4.0"

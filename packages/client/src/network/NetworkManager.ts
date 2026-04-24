@@ -3,7 +3,13 @@ import { GameState } from "@mpmario/shared";
 import type { InputMessage } from "@mpmario/shared";
 import { MSG_INPUT, MSG_GAME_READY, MSG_WINNER, MSG_VOTE } from "@mpmario/shared";
 
-const SERVER_URL = import.meta.env.VITE_SERVER_URL ?? "ws://localhost:2567";
+function resolveServerUrl(): string {
+  if (import.meta.env.VITE_SERVER_URL) return import.meta.env.VITE_SERVER_URL as string;
+  // In production the client is served from the same host as the server
+  const proto = window.location.protocol === "https:" ? "wss" : "ws";
+  return `${proto}://${window.location.host}`;
+}
+const SERVER_URL = resolveServerUrl();
 
 export class NetworkManager {
   private client: Client;
@@ -18,24 +24,27 @@ export class NetworkManager {
     this.client = new Client(SERVER_URL);
   }
 
-  async joinLobby(): Promise<void> {
-    this.lobbyRoom = await this.client.join("lobby");
-    this.lobbyRoom.onMessage(MSG_GAME_READY, ({ roomId }: { roomId: string }) => {
-      this.onGameReady?.(roomId);
-    });
+  async connectToGame(): Promise<void> {
+    await this.gameRoom?.leave().catch(() => {});
+    this.gameRoom = await this.client.joinOrCreate<GameState>("game");
+    this.setupGameListeners();
   }
 
   async joinGame(roomId: string): Promise<void> {
-    await this.lobbyRoom?.leave();
+    await this.lobbyRoom?.leave().catch(() => {});
     this.lobbyRoom = null;
-    await this.gameRoom?.leave();
+    await this.gameRoom?.leave().catch(() => {});
     this.gameRoom = null;
     this.gameRoom = await this.client.joinById<GameState>(roomId);
-    this.gameRoom.onStateChange(state => this.onStateChange?.(state));
-    this.gameRoom.onMessage(MSG_WINNER, ({ winnerId }: { winnerId: string }) => {
+    this.setupGameListeners();
+  }
+
+  private setupGameListeners(): void {
+    this.gameRoom!.onStateChange(state => this.onStateChange?.(state));
+    this.gameRoom!.onMessage(MSG_WINNER, ({ winnerId }: { winnerId: string }) => {
       this.onWinner?.(winnerId);
     });
-    this.gameRoom.onMessage(MSG_GAME_READY, ({ roomId }: { roomId: string }) => {
+    this.gameRoom!.onMessage(MSG_GAME_READY, ({ roomId }: { roomId: string }) => {
       this.onGameReady?.(roomId);
     });
   }

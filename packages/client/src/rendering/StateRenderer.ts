@@ -36,7 +36,8 @@ export class StateRenderer {
       if (!this.players.has(id)) {
         const idx = this.playerIndex.size;
         this.playerIndex.set(id, idx);
-        const sprite = this.scene.add.image(player.x, player.y, `player_${idx}`).setOrigin(0, 0);
+        const sprite = this.scene.add.image(player.x, player.y, `player_${idx}`).setOrigin(0, 0).setDepth(1);
+        if (id === this.sessionId) sprite.setTint(0xffffff);
         this.players.set(id, { sprite, prevX: player.x, prevY: player.y });
       }
       const tracked = this.players.get(id)!;

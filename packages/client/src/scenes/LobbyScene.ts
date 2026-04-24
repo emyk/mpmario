@@ -13,14 +13,8 @@ export class LobbyScene extends Phaser.Scene {
     this.add.text(480, 180, "Waiting for players…", { fontSize: "14px", color: "#7f8c8d" }).setOrigin(0.5);
 
     this.networkManager = new NetworkManager();
-    this.networkManager.onGameReady = async (roomId) => {
-      this.statusText.setText("Game found! Joining…");
-      await this.networkManager.joinGame(roomId);
-      this.scene.start("GameScene", { network: this.networkManager });
-    };
-
-    this.networkManager.joinLobby()
-      .then(() => { this.statusText.setText("In queue — waiting for opponent…"); })
+    this.networkManager.connectToGame()
+      .then(() => { this.scene.start("GameScene", { network: this.networkManager }); })
       .catch((err: Error) => { this.statusText.setText(`Connection failed: ${err.message}`); });
   }
 }

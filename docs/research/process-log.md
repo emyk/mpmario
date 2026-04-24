@@ -201,6 +201,57 @@
 
 ---
 
+### Oppføring — Runtime-feil: tsx dekoratorer etter merge til main
+
+- Tidspunkt: 2026-04-24, etter merge av implement-gren til main
+- Hva ble testet: Faktisk kjøring av serveren for første gang (`pnpm dev:server`)
+- Betingelse / variant: Første gang koden kjøres utenom tester. Alle 31 tester passerte, men det er en vesentlig forskjell mellom testmiljø (vitest med CJS-alias) og runtime (tsx watch).
+- Resultat / observasjon: Serveren krasjet umiddelbart med `TypeError: Cannot read properties of undefined (reading 'constructor')` fra `@colyseus/schema/src/annotations.ts`. Stack trace viste `__decorateElement` (esbuild TC39 decorator-helper) i stedet for `__decorate` (legacy TypeScript decorator-helper). Dette betyr at esbuild/tsx brukte nytt TC39-dekoratorsyntaks i stedet for det gamle TypeScript-formatet som `@colyseus/schema` krever.
+  - **Første forsøk** (feil diagnose): Opprettet root-nivå `tsconfig.json` med `experimentalDecorators: true`. Hjalp ikke — tsx leser fremdeles tsconfig per pakke, og `packages/shared/tsconfig.json` hadde allerede riktig innstilling.
+  - **Korrekt diagnose**: `packages/server/tsconfig.json` hadde `"paths": { "@mpmario/shared": ["../shared/src/index.ts"] }`. Denne `paths`-overstyringen tvang tsx til å prosessere TypeScript-kildekoden til shared-pakken direkte under kjøretid, noe som utløste esbuild-dekoratorfeil. Uten `paths`-overstyringen ville Node.js løse `@mpmario/shared` via pnpm workspace-symlink til `packages/shared/dist/index.js` (forhåndskompilert JS der `tsc` håndterte dekoratorer korrekt).
+  - **Løsning**: Fjernet `paths` fra server-tsconfig. La til `pnpm --filter @mpmario/shared build` som første steg i `dev:server`-skriptet.
+- Måling / eksempel: Serveren starter nå uten feil etter `pnpm dev:server`.
+- Tolkning / usikkerhet: Dette er en typisk fallgruve i TypeScript monorepos: `paths`-overtyring er nyttig under utvikling for hot-reload av shared-kode, men den omgår Node.js-moduloppløsning og eksponerer kjøretidsverktøy (tsx/esbuild) for TypeScript-filer som er ment kompilert av `tsc`. For verktøy som avhenger av spesifikk dekoratorsyntaks (Colyseus, NestJS, TypeORM) er dette farlig. Riktig arbeidsflyt er: kompiler shared med `tsc` (som håndterer `experimentalDecorators` korrekt), importer fra `dist/`.
+
+---
+
+### Oppføring — Tilkoblingsfeil: `join` vs. `joinOrCreate` og matchmaking-design
+
+- Tidspunkt: 2026-04-24, etter serverfix
+- Hva ble testet: To nettleserfaner koblet til den kjørende serveren
+- Betingelse / variant: Første faktiske spillertest.
+- Resultat / observasjon: Feil 4211 ("no rooms found with provided criteria") i begge faner. Årsak: `NetworkManager.joinLobby()` brukte `client.join("lobby")` som krever at et lobby-rom eksisterer fra før. Ingen lobby-rom finnes ved serveroppstart — rom opprettes on-demand i Colyseus.
+  - **Løsning del 1**: Endret til `client.joinOrCreate("lobby")` — første fane oppretter rom, andre fane slutter seg til.
+  - **Løsning del 2**: Etter videre testing: `joinOrCreate("lobby")` opprettet separate lobby-rom per fane (fordi fane 2 opprettet ny NetworkManager-instans etter at fane 1 allerede satt i kø). Dette er en race condition i lobby-design, ikke en bug i seg selv.
+  - **Designendring** (brukerens forespørsel): Fjernet lobby-laget helt. Klienten gjør nå `joinOrCreate("game")` direkte. Ingen venting på MIN_PLAYERS — spillet starter med én spiller og andre kan bli med etterpå.
+  - **GameRoom-fix**: `checkWinCondition()` utløste umiddelbart "vinner" med én spiller fordi `alive.length === 1` alltid er sant for ensomme spillere. Fikset ved å spore `peakPlayerCount` — vinnerbetingelse krever nå at minst 2 spillere noen gang har vært i rommet.
+  - **Rommets tilgjengelighet**: La til `this.lock()` når spillet avsluttes slik at nye faner via `joinOrCreate` får et nytt rom og ikke slutter seg til et rom i voteringsfase.
+- Måling / eksempel: To faner kobler nå til samme spillrom. Spill starter med 1 spiller, andre kan bli med.
+- Tolkning / usikkerhet: Den opprinnelige lobby-tilnærmingen (samlingsrom → spillrom) er mer robust for matchmaking med ukjente spillere (garanterer at alle starter samtidig), men er unødvendig kompleks for utvikling og testing. Den direkte `joinOrCreate("game")`-tilnærmingen er bedre for et forskningsprosjekt der 2 faner er typisk testscenario.
+
+---
+
+### Oppføring — Visuell feil: ingen nivelrender, spillere usynlige
+
+- Tidspunkt: 2026-04-24, etter tilkoblingsfix
+- Hva ble testet: Faktisk spillgjengivelse i nettleseren
+- Betingelse / variant: To faner koblet, spillet kjører, men visuelt innhold mangler.
+- Resultat / observasjon: Bruker rapporterte: "blå bakgrunn og noen bokser — noen statiske og noen som scrollet. Ingen spillerfigur." Diagnose:
+  1. **Ingen nivelrendering**: `GameScene` gjengir aldri fliser. `StateRenderer` håndterer bare spillere/fiender/power-ups som sprites. Nivåets plattformer (fra `LevelLoader`s `collisionMap`) ble aldri tegnet på skjermen.
+  2. **Nivådata ikke tilgjengelig for klient**: `LevelLoader` bruker `fs.readFileSync` (Node.js) og kjører kun på serveren. Klienten hadde ingen tilgang til nivå-JSON-filene.
+  3. **Spilleren var faktisk synlig** som en farget rektangel (14×16 px) — men uten plattformer ser spilleren ut til å sveve i luften.
+  - **Løsning**:
+    - Vite-plugin i `vite.config.ts` som serverer `levels/*.json` fra repots rot — via dev-server middleware (utvikling) og Rollup `emitFile` (produksjonsbygg til Railway).
+    - `BootScene.preload()` laster alle 3 nivå-JSONer via Phaser sin innebygde `this.load.json()`.
+    - `GameScene.renderLevel()` tegner solid-fliser (fra collision-laget) ved første state-endring.
+    - `StateRenderer`: lokal spillers sprite markert med hvit tint + sprites satt til `depth: 1` over fliser.
+    - `GameScene.updateHUD()`: lokal spiller-tekst i gult for å skille seg ut.
+  - **Railway-hensyn**: `generateBundle`-hook i Vite-plugin sikrer at `levels/` kopieres til `dist/` under bygging. Serveren leser nivåer via `path.resolve(__dirname, ...)` — fungerer så lenge Railway kloner hele repo (nivåene er ikke i `.gitignore`).
+- Måling / eksempel: Plattformer synlige som brune fliser, spillere som fargede rektangler (hvit tint for deg selv), blå himmel som bakgrunn.
+- Tolkning / usikkerhet: Gapet mellom "kompilerer og tester" og "kjører og ser riktig ut" var stort her. 17 oppgaver med TDD og kodegjennomganger ga en server som fungerer korrekt, men et klientrenderingslag som aldri hadde blitt verifisert visuelt. Dette er den direkte konsekvensen av observasjonen i Task 17: "Browser testing gap — client tasks verified only by TypeScript compilation."
+
+---
+
 ## Samlede observasjoner
 
 ### Hva fungerte godt

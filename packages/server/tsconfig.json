@@ -9,10 +9,7 @@
     "useDefineForClassFields": false,
     "esModuleInterop": true,
     "resolveJsonModule": true,
-    "skipLibCheck": true,
-    "paths": {
-      "@mpmario/shared": ["../shared/src/index.ts"]
-    }
+    "skipLibCheck": true
   },
   "include": ["src"]
 }
