@@ -35,6 +35,9 @@ export class NetworkManager {
     this.gameRoom.onMessage(MSG_WINNER, ({ winnerId }: { winnerId: string }) => {
       this.onWinner?.(winnerId);
     });
+    this.gameRoom.onMessage(MSG_GAME_READY, ({ roomId }: { roomId: string }) => {
+      this.onGameReady?.(roomId);
+    });
   }
 
   sendInput(msg: InputMessage): void {

@@ -41,9 +41,13 @@ export class GameScene extends Phaser.Scene {
     };
 
     this.network.onGameReady = (roomId) => {
-      this.network.joinGame(roomId).then(() => {
-        this.scene.restart({ network: this.network, levelIndex: 0 });
-      });
+      this.network.joinGame(roomId)
+        .then(() => {
+          this.scene.restart({ network: this.network, levelIndex: 0 });
+        })
+        .catch((err: Error) => {
+          console.error("Failed to join next game", err);
+        });
     };
   }
 
