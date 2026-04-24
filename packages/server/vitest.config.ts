@@ -5,7 +5,7 @@ import { fileURLToPath } from "url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
-  test: { environment: "node" },
+  test: { environment: "node", fileParallelism: false },
   resolve: {
     alias: {
       "@mpmario/shared": path.resolve(__dirname, "../shared/src/index.ts"),
