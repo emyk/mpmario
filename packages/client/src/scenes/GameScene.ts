@@ -1,6 +1,7 @@
 import { NetworkManager } from "../network/NetworkManager";
 import { InputHandler }   from "../input/InputHandler";
 import { StateRenderer }  from "../rendering/StateRenderer";
+import { SoundManager }   from "../audio/SoundManager";
 import { GameState }      from "@mpmario/shared";
 import { SERVER_TICK_MS } from "@mpmario/shared";
 
@@ -10,17 +11,30 @@ export class GameScene extends Phaser.Scene {
   private network!: NetworkManager;
   private inputHandler!: InputHandler;
   private stateRenderer!: StateRenderer;
+  private sounds = new SoundManager();
   private lastState: GameState | null = null;
   private lastTickTime = 0;
   private livesTexts = new Map<string, Phaser.GameObjects.Text>();
   private fireHintText: Phaser.GameObjects.Text | null = null;
   private levelRendered = false;
 
+  // Sound change-detection
+  private prevLives    = new Map<string, number>();
+  private prevPowerUp  = new Map<string, string>();
+  private prevEnemyAlive = new Map<string, boolean>();
+  private prevJump   = false;
+  private prevAttack = false;
+
   constructor() { super({ key: "GameScene" }); }
 
   init(data: GameSceneData) {
     this.network = data.network;
     this.levelRendered = false;
+    this.prevLives.clear();
+    this.prevPowerUp.clear();
+    this.prevEnemyAlive.clear();
+    this.prevJump   = false;
+    this.prevAttack = false;
   }
 
   create(_data: GameSceneData) {
@@ -34,6 +48,7 @@ export class GameScene extends Phaser.Scene {
         this.levelRendered = true;
         this.renderLevel(state.levelIndex);
       }
+      this.detectSoundEvents(state);
       this.lastState    = state;
       this.lastTickTime = Date.now();
       this.updateHUD(state);
@@ -41,7 +56,8 @@ export class GameScene extends Phaser.Scene {
 
     this.network.onWinner = (winnerId) => {
       const isMe = winnerId === this.network.sessionId;
-      const msg  = isMe ? "You Win!" : "You Lose!";
+      isMe ? this.sounds.win() : this.sounds.loseLife();
+      const msg = isMe ? "You Win!" : "You Lose!";
       this.add.text(480, 120, msg, { fontSize: "32px", color: "#fff" }).setOrigin(0.5);
       this.time.delayedCall(3000, () => {
         this.scene.start("VoteScene", { network: this.network });
@@ -50,17 +66,21 @@ export class GameScene extends Phaser.Scene {
 
     this.network.onGameReady = (roomId) => {
       this.network.joinGame(roomId)
-        .then(() => {
-          this.scene.restart({ network: this.network, levelIndex: 0 });
-        })
-        .catch((err: Error) => {
-          console.error("Failed to join next game", err);
-        });
+        .then(() => { this.scene.restart({ network: this.network, levelIndex: 0 }); })
+        .catch((err: Error) => { console.error("Failed to join next game", err); });
     };
   }
 
   update() {
     const msg = this.inputHandler.getInputMessage();
+
+    // Edge-detect keypresses for input-driven sounds
+    const me = this.lastState?.players.get(this.network.sessionId);
+    if (msg.jump && !this.prevJump && me?.isOnGround)  this.sounds.jump();
+    if (msg.attack && !this.prevAttack && me?.powerUp === "fire") this.sounds.fireball();
+    this.prevJump   = msg.jump;
+    this.prevAttack = msg.attack;
+
     this.network.sendInput(msg);
 
     if (this.lastState) {
@@ -68,6 +88,27 @@ export class GameScene extends Phaser.Scene {
       const alpha   = Math.min(elapsed / SERVER_TICK_MS, 1);
       this.stateRenderer.apply(this.lastState, alpha);
     }
+  }
+
+  private detectSoundEvents(state: GameState) {
+    const myId = this.network.sessionId;
+
+    state.players.forEach((player, id) => {
+      const prevLives   = this.prevLives.get(id) ?? player.lives;
+      const prevPowerUp = this.prevPowerUp.get(id) ?? player.powerUp;
+
+      if (player.lives < prevLives && id === myId)       this.sounds.loseLife();
+      if (player.powerUp !== "none" && prevPowerUp === "none") this.sounds.powerUp();
+
+      this.prevLives.set(id, player.lives);
+      this.prevPowerUp.set(id, player.powerUp);
+    });
+
+    state.enemies.forEach((enemy, id) => {
+      const wasAlive = this.prevEnemyAlive.get(id) ?? enemy.isAlive;
+      if (wasAlive && !enemy.isAlive) this.sounds.stomp();
+      this.prevEnemyAlive.set(id, enemy.isAlive);
+    });
   }
 
   private renderLevel(levelIndex: number): void {
