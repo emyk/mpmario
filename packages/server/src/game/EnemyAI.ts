@@ -1,4 +1,3 @@
-import { MapSchema } from "@colyseus/schema";
 import { EnemyState } from "@mpmario/shared";
 import {
   ENEMY_SPEED, SHELL_SPEED,
@@ -7,7 +6,7 @@ import {
 } from "@mpmario/shared";
 import { isSolid } from "./Collision";
 
-export function updateEnemies(enemies: MapSchema<EnemyState>, map: boolean[][]): void {
+export function updateEnemies(enemies: Map<string, EnemyState>, map: boolean[][]): void {
   enemies.forEach(e => {
     if (!e.isAlive) return;
     switch (e.type) {
