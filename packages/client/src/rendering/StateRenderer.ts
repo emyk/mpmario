@@ -9,7 +9,7 @@ interface TrackedSprite {
 
 export class StateRenderer {
   private scene: Phaser.Scene;
-  private sessionId: string;
+  private sessionId: string; // TODO: use to highlight the local player's sprite
   private players  = new Map<string, TrackedSprite>();
   private enemies  = new Map<string, TrackedSprite>();
   private powerUps = new Map<string, Phaser.GameObjects.Image>();

@@ -28,11 +28,10 @@ export class NetworkManager {
   async joinGame(roomId: string): Promise<void> {
     await this.lobbyRoom?.leave();
     this.lobbyRoom = null;
+    await this.gameRoom?.leave();
+    this.gameRoom = null;
     this.gameRoom = await this.client.joinById<GameState>(roomId);
     this.gameRoom.onStateChange(state => this.onStateChange?.(state));
-    this.gameRoom.onMessage(MSG_GAME_READY, ({ roomId }: { roomId: string }) => {
-      this.onGameReady?.(roomId);
-    });
     this.gameRoom.onMessage(MSG_WINNER, ({ winnerId }: { winnerId: string }) => {
       this.onWinner?.(winnerId);
     });
