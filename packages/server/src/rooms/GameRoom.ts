@@ -1,23 +1,25 @@
 import { Room, Client, matchMaker } from "colyseus";
 import {
-  GameState, PlayerState, EnemyState, PowerUpState,
+  GameState, PlayerState, EnemyState, PowerUpState, FireballState,
   LIVES_PER_PLAYER, SERVER_TICK_MS, MAX_PLAYERS,
   MSG_INPUT, MSG_WINNER, MSG_VOTE, MSG_GAME_READY,
   RESPAWN_INVINCIBILITY_TICKS, VOTE_DURATION_S, MATCH_END_DELAY_MS,
   ENEMY_SPEED, POWERUP_RESPAWN_TICKS, TILE_SIZE,
+  FIREBALL_SPEED, FIREBALL_GRAVITY, MAX_FALL_SPEED,
 } from "@mpmario/shared";
 import type { InputMessage } from "@mpmario/shared";
 import { LevelLoader, LevelData } from "../game/LevelLoader";
 import { applyPhysics } from "../game/Physics";
-import { resolvePlayerCollisions } from "../game/Collision";
+import { resolvePlayerCollisions, isSolid } from "../game/Collision";
 import { updateEnemies } from "../game/EnemyAI";
 
 interface GameRoomOptions { levelIndex?: number; }
 
 export class GameRoom extends Room<GameState> {
-  private inputs   = new Map<string, InputMessage>();
+  private inputs          = new Map<string, InputMessage>();
   private levelData!: LevelData;
-  private votes    = new Map<string, number>();
+  private votes           = new Map<string, number>();
+  private fireballCounter = 0;
   maxClients = MAX_PLAYERS;
 
   async onCreate(options: GameRoomOptions) {
@@ -65,12 +67,16 @@ export class GameRoom extends Room<GameState> {
       const input = this.inputs.get(id) ?? { left: false, right: false, jump: false, attack: false };
       applyPhysics(player, input);
       resolvePlayerCollisions(player, this.levelData.collisionMap);
+      if (input.attack && player.powerUp === "fire") {
+        this.spawnFireball(player);
+      }
       this.checkPitDeath(player);
       if (player.invincibleTicks > 0) player.invincibleTicks--;
     });
 
     updateEnemies(this.state.enemies, this.levelData.collisionMap);
     this.resolveEntityCollisions();
+    this.tickFireballs();
     this.tickPowerUps();
     this.inputs.clear();
     this.checkWinCondition();
@@ -209,6 +215,60 @@ export class GameRoom extends Room<GameState> {
       // Broadcast game_ready with a fallback so clients don't get stuck
       this.broadcast(MSG_GAME_READY, { roomId: "" });
     }
+  }
+
+  private spawnFireball(player: PlayerState) {
+    const fb = new FireballState();
+    fb.id      = `fb_${this.fireballCounter++}`;
+    fb.ownerId = player.id;
+    fb.x       = player.x;
+    fb.y       = player.y;
+    fb.vx      = player.facingRight ? FIREBALL_SPEED : -FIREBALL_SPEED;
+    fb.vy      = 0;
+    this.state.fireballs.set(fb.id, fb);
+  }
+
+  private tickFireballs() {
+    this.state.fireballs.forEach((fb, id) => {
+      if (!fb.isAlive) { this.state.fireballs.delete(id); return; }
+
+      fb.vy = Math.min(fb.vy + FIREBALL_GRAVITY, MAX_FALL_SPEED);
+      fb.x += fb.vx;
+      fb.y += fb.vy;
+
+      const tileX = Math.floor(fb.x / TILE_SIZE);
+      const tileY = Math.floor((fb.y + 8) / TILE_SIZE);
+      if (isSolid(this.levelData.collisionMap, tileX, tileY)) {
+        if (fb.vy > 0) {
+          fb.y  = tileY * TILE_SIZE - 8;
+          fb.vy = -6; // bounce off floor
+        } else {
+          fb.isAlive = false;
+          return;
+        }
+      }
+
+      if (fb.x < 0 || fb.x > this.levelData.widthTiles * TILE_SIZE) {
+        fb.isAlive = false;
+        return;
+      }
+
+      this.state.enemies.forEach(enemy => {
+        if (!enemy.isAlive) return;
+        if (Math.abs(enemy.x - fb.x) < 16 && Math.abs(enemy.y - fb.y) < 16) {
+          enemy.isAlive = false;
+          fb.isAlive    = false;
+        }
+      });
+
+      this.state.players.forEach((target, tid) => {
+        if (tid === fb.ownerId || !target.isAlive || target.invincibleTicks > 0) return;
+        if (Math.abs(target.x - fb.x) < 14 && Math.abs(target.y - fb.y) < 16) {
+          this.eliminatePlayer(target, fb.ownerId);
+          fb.isAlive = false;
+        }
+      });
+    });
   }
 
   private initEnemies() {
