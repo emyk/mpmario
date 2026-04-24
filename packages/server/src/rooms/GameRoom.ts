@@ -16,10 +16,11 @@ import { updateEnemies } from "../game/EnemyAI";
 interface GameRoomOptions { levelIndex?: number; }
 
 export class GameRoom extends Room<GameState> {
-  private inputs          = new Map<string, InputMessage>();
+  private inputs              = new Map<string, InputMessage>();
   private levelData!: LevelData;
-  private votes           = new Map<string, number>();
-  private fireballCounter = 0;
+  private votes               = new Map<string, number>();
+  private fireballCounter     = 0;
+  private fireballCooldowns   = new Map<string, number>();
   maxClients = MAX_PLAYERS;
 
   async onCreate(options: GameRoomOptions) {
@@ -56,11 +57,16 @@ export class GameRoom extends Room<GameState> {
   onLeave(client: Client) {
     this.state.players.delete(client.sessionId);
     this.inputs.delete(client.sessionId);
+    this.fireballCooldowns.delete(client.sessionId);
     this.checkWinCondition();
   }
 
   private tick() {
     if (this.state.matchPhase !== "playing") return;
+
+    this.fireballCooldowns.forEach((ticks, id) => {
+      if (ticks > 0) this.fireballCooldowns.set(id, ticks - 1);
+    });
 
     this.state.players.forEach((player, id) => {
       if (!player.isAlive) return;
@@ -68,7 +74,11 @@ export class GameRoom extends Room<GameState> {
       applyPhysics(player, input);
       resolvePlayerCollisions(player, this.levelData.collisionMap);
       if (input.attack && player.powerUp === "fire") {
-        this.spawnFireball(player);
+        const cooldown = this.fireballCooldowns.get(player.id) ?? 0;
+        if (cooldown === 0) {
+          this.spawnFireball(player);
+          this.fireballCooldowns.set(player.id, 20); // ~333ms at 60Hz
+        }
       }
       this.checkPitDeath(player);
       if (player.invincibleTicks > 0) player.invincibleTicks--;
@@ -260,6 +270,8 @@ export class GameRoom extends Room<GameState> {
           fb.isAlive    = false;
         }
       });
+
+      if (!fb.isAlive) return;
 
       this.state.players.forEach((target, tid) => {
         if (tid === fb.ownerId || !target.isAlive || target.invincibleTicks > 0) return;
