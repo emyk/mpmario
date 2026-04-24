@@ -5,8 +5,11 @@ import { MSG_INPUT, MSG_GAME_READY, MSG_WINNER, MSG_VOTE } from "@mpmario/shared
 
 function resolveServerUrl(): string {
   if (import.meta.env.VITE_SERVER_URL) return import.meta.env.VITE_SERVER_URL as string;
-  // In production the client is served from the same host as the server
   const proto = window.location.protocol === "https:" ? "wss" : "ws";
+  const host = window.location.hostname;
+  // In local dev the Vite server (3000) and Colyseus server (2567) are separate
+  if (host === "localhost" || host === "127.0.0.1") return `${proto}://${host}:2567`;
+  // In production the client is served from the same host as the server
   return `${proto}://${window.location.host}`;
 }
 const SERVER_URL = resolveServerUrl();
