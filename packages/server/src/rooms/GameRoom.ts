@@ -79,9 +79,11 @@ export class GameRoom extends Room<GameState> {
       resolvePlayerCollisions(player, this.levelData.collisionMap);
       if (input.attack && player.powerUp === "fire") {
         const cooldown = this.fireballCooldowns.get(player.id) ?? 0;
-        if (cooldown === 0) {
+        const liveCount = [...this.state.fireballs.values()]
+          .filter(fb => fb.ownerId === player.id && fb.isAlive).length;
+        if (cooldown === 0 && liveCount < 2) {
           this.spawnFireball(player);
-          this.fireballCooldowns.set(player.id, 20); // ~333ms at 60Hz
+          this.fireballCooldowns.set(player.id, 10); // min gap between shots (~167ms)
         }
       }
       this.checkPitDeath(player);
