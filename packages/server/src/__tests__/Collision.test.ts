@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { resolvePlayerCollisions, isSolid } from "../game/Collision";
 import { PlayerState } from "@mpmario/shared";
-import { TILE_SIZE, PLAYER_WIDTH, PLAYER_HEIGHT_SMALL } from "@mpmario/shared";
+import { TILE_SIZE, PLAYER_WIDTH, PLAYER_HEIGHT_SMALL, PLAYER_SPEED } from "@mpmario/shared";
 
 // 3×3 grid: bottom row solid
 const MAP: boolean[][] = [
@@ -10,7 +10,7 @@ const MAP: boolean[][] = [
   [true,  true,  true ],
 ];
 
-function makePlayer(overrides: Partial<Record<string, any>> = {}): PlayerState {
+function makePlayer(overrides: Partial<PlayerState> = {}): PlayerState {
   const p = new PlayerState();
   p.x = TILE_SIZE; p.y = TILE_SIZE; p.vx = 0; p.vy = 0;
   Object.assign(p, overrides);
@@ -54,10 +54,31 @@ describe("resolvePlayerCollisions", () => {
       [false, false, true],
       [true,  true,  true],
     ];
-    const PLAYER_SPEED = 3;
-    const p = makePlayer({ x: TILE_SIZE, y: 0, vx: PLAYER_SPEED });
+    // Physics has already moved the player by vx; place player with right edge overlapping column 2
+    const p = makePlayer({ x: TILE_SIZE + PLAYER_SPEED, y: 0, vx: PLAYER_SPEED });
     resolvePlayerCollisions(p, WALL_MAP);
     expect(p.vx).toBe(0);
     expect(p.x).toBeLessThanOrEqual(2 * TILE_SIZE - PLAYER_WIDTH);
+  });
+
+  it("stops player walking into wall on the left", () => {
+    const WALL_MAP: boolean[][] = [
+      [true, false, false],
+      [true, false, false],
+      [true, true,  true ],
+    ];
+    // Physics has already moved the player by vx; place player with left edge overlapping column 0
+    const p = makePlayer({ x: TILE_SIZE - PLAYER_SPEED, y: 0, vx: -PLAYER_SPEED });
+    resolvePlayerCollisions(p, WALL_MAP);
+    expect(p.vx).toBe(0);
+    expect(p.x).toBeGreaterThanOrEqual(TILE_SIZE);
+  });
+
+  it("clears isOnGround when entity is in free air", () => {
+    // Player in row 0, falling — no floor tile below row 0 in MAP
+    const p = makePlayer({ x: TILE_SIZE, y: 0, vy: 2 });
+    (p as any).isOnGround = true;
+    resolvePlayerCollisions(p, MAP);
+    expect(p.isOnGround).toBe(false);
   });
 });

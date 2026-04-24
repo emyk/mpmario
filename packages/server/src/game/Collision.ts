@@ -20,6 +20,9 @@ function resolveEntity(
   h: number
 ): void {
   // Y axis — falling (floor check)
+  // Clear isOnGround unconditionally for vy >= 0 (not just vy > 0): an entity resting on the
+  // floor has vy == 0, and the floor check below will re-set isOnGround = true on the same tick.
+  // Using vy > 0 would cause resting entities to lose their isOnGround flag.
   if (e.vy >= 0) {
     const tileY  = Math.floor((e.y + h) / TILE_SIZE);
     const tileX1 = Math.floor(e.x / TILE_SIZE);
@@ -41,9 +44,9 @@ function resolveEntity(
     }
   }
 
-  // X axis — right wall (check projected position after velocity)
+  // X axis — right wall (entity is already at new position after Physics integrates velocity)
   if (e.vx > 0) {
-    const wallX  = Math.floor((e.x + w + e.vx) / TILE_SIZE);
+    const wallX  = Math.floor((e.x + w - 1) / TILE_SIZE);
     const tileYT = Math.floor(e.y / TILE_SIZE);
     const tileYB = Math.floor((e.y + h - 1) / TILE_SIZE);
     if (isSolid(map, wallX, tileYT) || isSolid(map, wallX, tileYB)) {
@@ -51,8 +54,8 @@ function resolveEntity(
       e.vx = 0;
     }
   } else if (e.vx < 0) {
-    // X axis — left wall (check projected position after velocity)
-    const wallX  = Math.floor((e.x + e.vx) / TILE_SIZE);
+    // X axis — left wall
+    const wallX  = Math.floor(e.x / TILE_SIZE);
     const tileYT = Math.floor(e.y / TILE_SIZE);
     const tileYB = Math.floor((e.y + h - 1) / TILE_SIZE);
     if (isSolid(map, wallX, tileYT) || isSolid(map, wallX, tileYB)) {
