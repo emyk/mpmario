@@ -1,0 +1,15 @@
+{
+  "name": "@mpmario/shared",
+  "version": "1.0.0",
+  "main": "src/index.ts",
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@colyseus/schema": "^2.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  }
+}
