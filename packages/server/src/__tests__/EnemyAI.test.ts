@@ -57,4 +57,35 @@ describe("EnemyAI", () => {
     updateEnemies(enemies, MAP);
     expect(e.x).toBe(10); // unchanged
   });
+
+  it("goomba reverses at edge of platform (no floor ahead)", () => {
+    // 3-column map: floor only under col 0, open cols 1 and 2
+    const CLIFF_MAP: boolean[][] = [
+      [false, false, false],
+      [false, false, false],
+      [true,  false, false],
+    ];
+    // Enemy at col 0, moving right — col 1 has no floor
+    const e = makeEnemy("goomba", { x: 0, y: 0, vx: 1 });
+    const enemies = makeMap([e]);
+    updateEnemies(enemies, CLIFF_MAP);
+    expect(e.vx).toBeLessThan(0); // reversed
+  });
+
+  it("stopped shell koopa stays stopped", () => {
+    const e = makeEnemy("koopa", { isShell: true, vx: 0 });
+    const enemies = makeMap([e]);
+    const origX = e.x;
+    updateEnemies(enemies, MAP);
+    expect(e.vx).toBe(0);
+    expect(e.x).toBe(origX);
+  });
+
+  it("piranha transitions from hidden to visible", () => {
+    const cycle = PIRANHA_VISIBLE_TICKS + PIRANHA_HIDDEN_TICKS;
+    const e = makeEnemy("piranha", { piranhaTimer: cycle - 1, piranhaVisible: false });
+    const enemies = makeMap([e]);
+    updateEnemies(enemies, MAP); // timer wraps to 0 → visible
+    expect(e.piranhaVisible).toBe(true);
+  });
 });

@@ -22,23 +22,15 @@ export function updateEnemies(enemies: MapSchema<EnemyState>, map: boolean[][]):
 function updateWalker(e: EnemyState, map: boolean[][], speed: number): void {
   const nextX = e.x + e.vx;
 
-  // Tile ahead (in direction of movement) at mid-body height
-  const aheadCol   = e.vx > 0
-    ? Math.floor((nextX + TILE_SIZE - 1) / TILE_SIZE)
-    : Math.floor(nextX / TILE_SIZE);
+  const leadingCol = Math.floor((nextX + (e.vx > 0 ? TILE_SIZE - 1 : 0)) / TILE_SIZE);
   const midRow     = Math.floor((e.y + TILE_SIZE / 2) / TILE_SIZE);
-
-  // Tile below foot in front (for edge/cliff detection)
-  const footAheadCol = e.vx > 0
-    ? Math.floor((nextX + TILE_SIZE - 1) / TILE_SIZE)
-    : Math.floor(nextX / TILE_SIZE);
   const belowRow   = Math.floor((e.y + TILE_SIZE) / TILE_SIZE);
 
-  const hitsWall  = isSolid(map, aheadCol, midRow);
-  const noFloor   = !isSolid(map, footAheadCol, belowRow);
+  const hitsWall = isSolid(map, leadingCol, midRow);
+  const noFloor  = !isSolid(map, leadingCol, belowRow);
 
   if (hitsWall || noFloor) {
-    e.vx = e.vx !== 0 ? -e.vx : speed;
+    e.vx = e.vx > 0 ? -speed : speed;
   } else {
     e.x = nextX;
   }

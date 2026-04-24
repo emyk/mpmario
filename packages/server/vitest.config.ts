@@ -9,7 +9,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@mpmario/shared": path.resolve(__dirname, "../shared/src/index.ts"),
-      "@colyseus/schema": path.resolve(__dirname, "../../node_modules/.pnpm/node_modules/@colyseus/schema/build/cjs/index.js"),
+      "@colyseus/schema": (require as NodeRequire).resolve("@colyseus/schema"),
     },
   },
 });
