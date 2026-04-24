@@ -4,7 +4,7 @@ import {
   LIVES_PER_PLAYER, SERVER_TICK_MS, MAX_PLAYERS,
   MSG_INPUT, MSG_WINNER, MSG_VOTE, MSG_GAME_READY,
   RESPAWN_INVINCIBILITY_TICKS, VOTE_DURATION_S, MATCH_END_DELAY_MS,
-  ENEMY_SPEED, POWERUP_RESPAWN_TICKS,
+  ENEMY_SPEED, POWERUP_RESPAWN_TICKS, TILE_SIZE,
 } from "@mpmario/shared";
 import type { InputMessage } from "@mpmario/shared";
 import { LevelLoader, LevelData } from "../game/LevelLoader";
@@ -77,7 +77,7 @@ export class GameRoom extends Room<GameState> {
   }
 
   private checkPitDeath(player: PlayerState) {
-    if (player.y > this.levelData.heightTiles * 32) {
+    if (player.y > this.levelData.heightTiles * TILE_SIZE) {
       this.eliminatePlayer(player, null);
     }
   }
@@ -151,6 +151,7 @@ export class GameRoom extends Room<GameState> {
   }
 
   private eliminatePlayer(player: PlayerState, _killerId: string | null) {
+    if (!player.isAlive) return;
     player.lives--;
     if (player.lives <= 0) {
       player.isAlive = false;
@@ -166,9 +167,17 @@ export class GameRoom extends Room<GameState> {
   checkWinCondition() {
     if (this.state.matchPhase !== "playing") return;
     const alive = [...this.state.players.values()].filter(p => p.lives > 0);
-    if (this.state.players.size >= 2 && alive.length <= 1) {
+    if (alive.length === 1) {
       this.state.matchPhase = "ended";
-      this.state.winnerId = alive[0]?.id ?? "";
+      this.state.winnerId = alive[0].id;
+      this.broadcast(MSG_WINNER, { winnerId: this.state.winnerId });
+      this.clock.setTimeout(() => this.startVote(), MATCH_END_DELAY_MS);
+    } else if (alive.length === 0 && this.state.players.size >= 1) {
+      // Simultaneous elimination — pick random winner from all players
+      const all = [...this.state.players.values()];
+      const winner = all[Math.floor(Math.random() * all.length)];
+      this.state.matchPhase = "ended";
+      this.state.winnerId = winner.id;
       this.broadcast(MSG_WINNER, { winnerId: this.state.winnerId });
       this.clock.setTimeout(() => this.startVote(), MATCH_END_DELAY_MS);
     }
@@ -192,8 +201,14 @@ export class GameRoom extends Room<GameState> {
     let nextLevel = Math.floor(Math.random() * 3);
     let best = 0;
     counts.forEach((count, idx) => { if (count > best) { best = count; nextLevel = idx; } });
-    const room = await matchMaker.createRoom("game", { levelIndex: nextLevel });
-    this.broadcast(MSG_GAME_READY, { roomId: room.roomId });
+    try {
+      const room = await matchMaker.createRoom("game", { levelIndex: nextLevel });
+      this.broadcast(MSG_GAME_READY, { roomId: room.roomId });
+    } catch (err) {
+      console.error("resolveVote: failed to create room", err);
+      // Broadcast game_ready with a fallback so clients don't get stuck
+      this.broadcast(MSG_GAME_READY, { roomId: "" });
+    }
   }
 
   private initEnemies() {

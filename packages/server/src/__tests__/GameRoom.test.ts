@@ -28,6 +28,32 @@ describe("GameRoom", () => {
     c1.leave();
   });
 
+  it("kills player who falls below the map", async () => {
+    const room = await colyseus.createRoom("game", { levelIndex: 0 });
+    const c1 = await colyseus.connectTo(room);
+    await room.waitForNextPatch();
+    const player = room.state.players.get(c1.sessionId)!;
+    const initialLives = player.lives;
+    // Move player far below the map bottom
+    player.y = 99999;
+    (room as any).checkPitDeath(player);
+    expect(player.lives).toBeLessThan(initialLives);
+    c1.leave();
+  });
+
+  it("respawns player with invincibility ticks when they have lives remaining", async () => {
+    const room = await colyseus.createRoom("game", { levelIndex: 0 });
+    const c1 = await colyseus.connectTo(room);
+    await room.waitForNextPatch();
+    const player = room.state.players.get(c1.sessionId)!;
+    player.lives = 2; // ensure they have a life to spare
+    (room as any).eliminatePlayer(player, null);
+    expect(player.lives).toBe(1);
+    expect(player.invincibleTicks).toBeGreaterThan(0);
+    expect(player.x).toBe(player.spawnX);
+    c1.leave();
+  });
+
   it("emits winner message when only one player has lives", async () => {
     const room = await colyseus.createRoom("game", { levelIndex: 0 });
     const c1 = await colyseus.connectTo(room);
