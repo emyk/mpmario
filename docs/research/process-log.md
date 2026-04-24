@@ -129,3 +129,36 @@
 - Tolkning / usikkerhet: The goomba wall-reversal test passes via the `noFloor` path (enemy walks off map edge) rather than `hitsWall`. The implementer noted this. Both paths produce the same user-visible behaviour, but the wall-hit code path is untested. Acceptable for now; GameRoom integration tests will exercise it with real maps.
 
 ---
+
+### Oppføring — Task 8: GameRoom (full implementasjon)
+
+- Tidspunkt: 2026-04-24
+- Hva ble testet: Full `GameRoom` replacing the stub — 60 Hz game loop integrating Physics, Collision, EnemyAI, player lifecycle, win detection, vote phase
+- Betingelse / variant: Largest single task so far. Implementer also created `levels/level1.json` as a minimal test fixture so `LevelLoader.load(0)` could work in integration tests (full levels come in Task 10).
+- Resultat / observasjon: Quality reviewer caught a critical bug: pit death threshold used `heightTiles * 32` instead of `heightTiles * TILE_SIZE` (= 16), making the death zone twice as deep. Also found: win condition's `players.size >= 2` guard left a sole survivor stuck in "playing" forever after an opponent disconnected; `resolveVote` had no error handling for `matchMaker.createRoom` failures; `eliminatePlayer` lacked a guard against double-elimination. Two tests added: pit death and respawn-with-invincibility.
+- Måling / eksempel: Commits `fa8d588` + `c4551c6`. 31 tests passing.
+- Tolkning / usikkerhet: The pit-death bug (`* 32` instead of `* TILE_SIZE`) is a recurring hardcoding pattern — the plan's reference code used `32` but `TILE_SIZE = 16` is the canonical constant throughout the project. The reviewers are consistently catching this class of magic-number bugs.
+
+---
+
+### Oppføring — Task 9: Fireball-prosjektiler
+
+- Tidspunkt: 2026-04-24
+- Hva ble testet: Fireball physics (gravity, bounce off floor, wall/ceiling kill), spawning from fire-flower players, hit detection against enemies and players
+- Betingelse / variant: Shared-side (FireballState schema, GameState.fireballs) was already done proactively in Task 2. Only server-side GameRoom changes needed.
+- Resultat / observasjon: Quality reviewer found that a fireball that kills an enemy could also kill a player on the same tick — missing `if (!fb.isAlive) return;` guard between the enemy and player collision loops. Also: `spawnFireball` was called unconditionally every tick while `attack` was held, spawning ~60 fireballs/second. Fixed with a 20-tick per-player cooldown (~333ms at 60 Hz).
+- Måling / eksempel: Commits `1b91bb5` + `22c24b9`. 31 tests passing.
+- Tolkning / usikkerhet: The double-kill scenario (fireball kills enemy and player simultaneously) would be hard to notice during playtesting — it requires precise pixel alignment. The review step caught it through code inspection. The cooldown was not in the plan but is clearly necessary for gameplay correctness.
+
+---
+
+### Oppføring — Task 10: Nivåinnhold (3 Tiled JSON-filer)
+
+- Tidspunkt: 2026-04-24
+- Hva ble testet: Generating three 60×15 Tiled JSON level files with varied platform layouts, 4 spawn points, 4 enemies, and 3 power-ups each
+- Betingelse / variant: `levels/level1.json` already existed as a minimal 20×10 test fixture from Task 8. Task 10 overwrites it with the full 60×15 version and adds level2 and level3.
+- Resultat / observasjon: Generated correctly. Quality reviewer flagged that all 9 power-up placements were floating mid-air with no platform support — particularly the star objects placed at y=80 with no nearby geometry. Since power-ups are static (no gravity in the physics loop), they would render floating visually. Fixed by placing power-ups one tile above existing platform tiles in each level.
+- Måling / eksempel: Commits `e2f69bb` + `1567790`. 31 server tests passing. Three 60×15 levels: level1 (flat ground + platforms), level2 (staircase ascending), level3 (island platforms with pits).
+- Tolkning / usikkerhet: The level generation is script-based (Node.js one-liners). This makes levels reproducible but not visually designable without tooling. The Tiled editor would give better control, but generating from code is fast for a research project.
+
+---
