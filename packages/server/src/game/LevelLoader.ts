@@ -19,6 +19,7 @@ const POWERUP_TYPES = new Set(["mushroom", "flower", "star"]);
 
 export class LevelLoader {
   static load(index: number): LevelData {
+    // __dirname is dist/game/ at runtime; levels/ is at repo root (4 directories up)
     const p = path.resolve(__dirname, "../../../../levels", `level${index + 1}.json`);
     return LevelLoader.parse(JSON.parse(fs.readFileSync(p, "utf-8")));
   }
@@ -26,7 +27,7 @@ export class LevelLoader {
   static parse(raw: any): LevelData {
     const w = raw.width as number;
     const h = raw.height as number;
-    const collisionMap: boolean[][] = Array.from({ length: h }, () => Array(w).fill(false));
+    const collisionMap: boolean[][] = Array.from({ length: h }, () => new Array<boolean>(w).fill(false));
     const spawns: SpawnPoint[] = [];
     const enemySpawns: EnemySpawn[] = [];
     const powerUpSpawns: PowerUpSpawn[] = [];
