@@ -16,6 +16,6 @@ const gameServer = new Server({ server: httpServer });
 gameServer.define("lobby", LobbyRoom);
 gameServer.define("game", GameRoom);
 
-gameServer.listen(port).then(() => {
-  console.log(`Server listening on port ${port}`);
-});
+gameServer.listen(port)
+  .then(() => { console.log(`Server listening on port ${port}`); })
+  .catch((err: Error) => { console.error("Failed to start server:", err); process.exit(1); });
